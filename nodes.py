@@ -147,6 +147,9 @@ class ApplyFooocusInpaint:
     CATEGORY = "inpaint"
     FUNCTION = "patch"
 
+    _inpaint_head_feature: Tensor | None = None
+    _inpaint_block: Tensor | None = None
+
     def patch(
         self,
         model: ModelPatcher,
@@ -162,19 +165,15 @@ class ApplyFooocusInpaint:
         inpaint_head_model, inpaint_lora = patch
         feed = torch.cat([latent_mask, latent_pixels], dim=1)
         inpaint_head_model.to(device=feed.device, dtype=feed.dtype)
-        inpaint_head_feature = inpaint_head_model(feed)
-
-        def input_block_patch(h, transformer_options):
-            if transformer_options["block"][1] == 0:
-                h = h + inpaint_head_feature.to(h)
-            return h
+        self._inpaint_head_feature = inpaint_head_model(feed)
+        self._inpaint_block = None
 
         lora_keys = comfy.lora.model_lora_keys_unet(model.model, {})
         lora_keys.update({x: x for x in base_model.state_dict().keys()})
         loaded_lora = load_fooocus_patch(inpaint_lora, lora_keys)
 
         m = model
-        m.replace_model_patch(input_block_patch,"input_block_patch")
+        m.replace_model_patch(self._input_block_patch,"input_block_patch")
         if self.is_first:
             patched = m.add_patches(loaded_lora, 1.0)
             self.is_first = False
@@ -185,6 +184,15 @@ class ApplyFooocusInpaint:
 
             inject_patched_calculate_weight()
         return (m,)
+
+    def _input_block_patch(self, h: Tensor, transformer_options: dict):
+        if transformer_options["block"][1] == 0:
+            if self._inpaint_block is None or self._inpaint_block.shape != h.shape:
+                assert self._inpaint_head_feature is not None
+                batch = h.shape[0] // self._inpaint_head_feature.shape[0]
+                self._inpaint_block = self._inpaint_head_feature.to(h).repeat(batch, 1, 1, 1)
+            h = h + self._inpaint_block
+        return h
 
 
 class VAEEncodeInpaintConditioning:

@@ -127,8 +127,12 @@ class LoadFooocusInpaint:
 
         return ((inpaint_head_model, inpaint_lora),)
 
-
+import logging
+logger = logging.getLogger(__file__)
 class ApplyFooocusInpaint:
+    def __init__(self) -> None:
+        self.is_first = True
+
     @classmethod
     def INPUT_TYPES(s):
         return {
@@ -169,15 +173,17 @@ class ApplyFooocusInpaint:
         lora_keys.update({x: x for x in base_model.state_dict().keys()})
         loaded_lora = load_fooocus_patch(inpaint_lora, lora_keys)
 
-        m = model.clone()
-        m.set_model_input_block_patch(input_block_patch)
-        patched = m.add_patches(loaded_lora, 1.0)
+        m = model
+        m.replace_model_patch(input_block_patch,"input_block_patch")
+        if self.is_first:
+            patched = m.add_patches(loaded_lora, 1.0)
+            self.is_first = False
 
-        not_patched_count = sum(1 for x in loaded_lora if x not in patched)
-        if not_patched_count > 0:
-            print(f"[ApplyFooocusInpaint] Failed to patch {not_patched_count} keys")
+            not_patched_count = sum(1 for x in loaded_lora if x not in patched)
+            if not_patched_count > 0:
+                print(f"[ApplyFooocusInpaint] Failed to patch {not_patched_count} keys")
 
-        inject_patched_calculate_weight()
+            inject_patched_calculate_weight()
         return (m,)
 
 

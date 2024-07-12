@@ -131,7 +131,7 @@ import logging
 logger = logging.getLogger(__file__)
 class ApplyFooocusInpaint:
     def __init__(self) -> None:
-        self.is_first = True
+        self.current_model = None
 
     @classmethod
     def INPUT_TYPES(s):
@@ -168,15 +168,16 @@ class ApplyFooocusInpaint:
         self._inpaint_head_feature = inpaint_head_model(feed)
         self._inpaint_block = None
 
-        lora_keys = comfy.lora.model_lora_keys_unet(model.model, {})
-        lora_keys.update({x: x for x in base_model.state_dict().keys()})
-        loaded_lora = load_fooocus_patch(inpaint_lora, lora_keys)
-
         m = model
         m.replace_model_patch(self._input_block_patch,"input_block_patch")
-        if self.is_first:
+        if self.current_model != model:            
+            lora_keys = comfy.lora.model_lora_keys_unet(model.model, {})
+            lora_keys.update({x: x for x in base_model.state_dict().keys()})
+            loaded_lora = load_fooocus_patch(inpaint_lora, lora_keys)
+
+            logger.debug("execute the patch fooocus.")
             patched = m.add_patches(loaded_lora, 1.0)
-            self.is_first = False
+            self.current_model = model
 
             not_patched_count = sum(1 for x in loaded_lora if x not in patched)
             if not_patched_count > 0:
